@@ -11,8 +11,6 @@ import java.util.concurrent.TimeUnit;
 import javax.annotation.PreDestroy;
 import javax.json.bind.Jsonb;
 import javax.json.bind.JsonbBuilder;
-import javax.json.bind.serializer.SerializationContext;
-import javax.json.stream.JsonGenerator;
 import javax.validation.constraints.NotNull;
 
 import com.couchbase.client.java.Bucket;
@@ -26,8 +24,9 @@ import com.couchbase.client.java.query.ParameterizedN1qlQuery;
 import com.couchbase.client.java.query.Select;
 import com.couchbase.client.java.query.Statement;
 import com.couchbase.client.java.query.dsl.Expression;
-import net.osomahe.cc.entity.CBAggregate;
-import net.osomahe.cc.entity.CBType;
+import net.osomahe.cc.entity.Aggregate;
+import net.osomahe.cc.entity.ExpirationSecs;
+import net.osomahe.cc.entity.Type;
 
 
 /**
@@ -36,6 +35,8 @@ import net.osomahe.cc.entity.CBType;
  * @author Antonin Stoklasek
  */
 public class CouchbaseManager {
+
+    private static final int DEFAULT_EXPIRATION = 0;
 
     protected static final String DOT = ".";
 
@@ -57,13 +58,8 @@ public class CouchbaseManager {
         this.bucket = cluster.openBucket(bucketName);
     }
 
-    private void getBigDecimalSerializer(Object o, JsonGenerator jsonGenerator, SerializationContext serializationContext) {
 
-
-    }
-
-
-    public <T extends CBAggregate> void save(T aggregate) {
+    public <T extends Aggregate> void save(T aggregate) {
         Map aggregateMap = createMap(aggregate);
         Optional<String> oType = getType(aggregate);
         JsonObject data;
@@ -74,24 +70,37 @@ public class CouchbaseManager {
         } else {
             data = JsonObject.from(aggregateMap);
         }
-        save(aggregate.getId(), data);
+        int exp = getExpiration(aggregate);
+        save(aggregate.getId(), data, exp);
+    }
+
+    private <T extends Aggregate> int getExpiration(T aggregate) {
+        ExpirationSecs expirationSecs = aggregate.getClass().getDeclaredAnnotation(ExpirationSecs.class);
+        if (expirationSecs != null) {
+            return expirationSecs.value();
+        }
+        return DEFAULT_EXPIRATION;
     }
 
     protected void save(String id, JsonObject data) {
-        save(JsonDocument.create(id, data));
+        save(id, data, DEFAULT_EXPIRATION);
+    }
+
+    protected void save(String id, JsonObject data, int expiration) {
+        save(JsonDocument.create(id, expiration, data));
     }
 
     protected void save(JsonDocument document) {
         bucket.upsert(document);
     }
 
-    private <T extends CBAggregate> Map<String, ?> createMap(T aggregate) {
+    private <T extends Aggregate> Map<String, ?> createMap(T aggregate) {
         Map<String, ?> map = jsonb.fromJson(jsonb.toJson(aggregate), Map.class);
         map.remove(ID_KEY);
         return map;
     }
 
-    public <T extends CBAggregate> T find(String aggregateId, Class<T> aClass) {
+    public <T extends Aggregate> T find(String aggregateId, Class<T> aClass) {
         JsonDocument doc = this.bucket.get(aggregateId);
         Map<String, Object> content = doc.content().toMap();
         Optional<String> oType = getType(aClass);
@@ -106,19 +115,19 @@ public class CouchbaseManager {
         return aggregate;
     }
 
-    private Optional<String> getType(@NotNull CBAggregate aggregate) {
+    private Optional<String> getType(@NotNull Aggregate aggregate) {
         return getType(aggregate.getClass());
     }
 
-    protected <T extends CBAggregate> Optional<String> getType(@NotNull Class<T> aClass) {
-        CBType type = aClass.getDeclaredAnnotation(CBType.class);
+    protected <T extends Aggregate> Optional<String> getType(@NotNull Class<T> aClass) {
+        Type type = aClass.getDeclaredAnnotation(Type.class);
         if (type != null) {
             return Optional.of(type.value());
         }
         return Optional.empty();
     }
 
-    public <T extends CBAggregate> List<T> findAllByCriteria(final Class<T> aClass, final Map<String, ?> criteriaMap) {
+    public <T extends Aggregate> List<T> findAllByCriteria(final Class<T> aClass, final Map<String, ?> criteriaMap) {
         String type = getType(aClass).get();
         JsonObject placeholderValues = JsonObject.create()
                 .put(TYPE_KEY, type);
@@ -150,7 +159,7 @@ public class CouchbaseManager {
         return results;
     }
 
-    public <T extends CBAggregate> void delete(String id) {
+    public <T extends Aggregate> void delete(String id) {
         this.bucket.remove(id);
     }
 

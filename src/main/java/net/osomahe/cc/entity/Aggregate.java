@@ -5,7 +5,7 @@ package net.osomahe.cc.entity;
  *
  * @author Antonin Stoklasek
  */
-public abstract class CBAggregate {
+public abstract class Aggregate {
 
     protected String id;
 
@@ -20,7 +20,7 @@ public abstract class CBAggregate {
 
     @Override
     public String toString() {
-        return "CBAggregate{" +
+        return "Aggregate{" +
                 "id='" + id + '\'' +
                 '}';
     }
