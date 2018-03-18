@@ -13,6 +13,7 @@ import javax.json.bind.Jsonb;
 import javax.json.bind.JsonbBuilder;
 import javax.validation.constraints.NotNull;
 
+import com.couchbase.client.java.AsyncBucket;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.CouchbaseCluster;
 import com.couchbase.client.java.document.JsonDocument;
@@ -27,6 +28,8 @@ import com.couchbase.client.java.query.dsl.Expression;
 import net.osomahe.cc.entity.Aggregate;
 import net.osomahe.cc.entity.ExpirationSecs;
 import net.osomahe.cc.entity.Type;
+import rx.Observable;
+import rx.functions.Func1;
 
 
 /**
@@ -58,6 +61,27 @@ public class CouchbaseManager {
         this.bucket = cluster.openBucket(bucketName);
     }
 
+    public <T extends Aggregate> void saveBatch(List<T> list) {
+        String type = getType(list.get(0)).get();
+        int exp = getExpiration(list.get(0));
+        final AsyncBucket asyncBucket = bucket.async();
+        List<JsonDocument> documents = new ArrayList<>();
+        for(T aggregate : list){
+            Map aggregateMap = createMap(aggregate);
+            JsonObject data = JsonObject.create().put(TYPE_KEY, type).put(CONTENT_KEY, aggregateMap);
+            documents.add(JsonDocument.create(aggregate.getId(), exp, data));
+            //asyncBucket.insert(JsonDocument.create(aggregate.getId(), exp, data));
+        }
+        Observable.from(documents)
+                .flatMap(new Func1<JsonDocument, Observable<JsonDocument>>() {
+                    @Override
+                    public Observable<JsonDocument> call(final JsonDocument docToInsert) {
+                        return asyncBucket.insert(docToInsert);
+                    }
+                }).last()
+                .toBlocking()
+                .single();
+    }
 
     public <T extends Aggregate> void save(T aggregate) {
         Map aggregateMap = createMap(aggregate);
