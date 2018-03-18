@@ -100,6 +100,17 @@ public class CouchbaseManager {
         return map;
     }
 
+    public boolean exists(String aggregateId) {
+        return this.bucket.exists(aggregateId);
+    }
+
+    public <T extends Aggregate> Optional<T> oFind(String aggregateId, Class<T> aClass) {
+        if (exists(aggregateId)) {
+            return Optional.of(find(aggregateId, aClass));
+        }
+        return Optional.empty();
+    }
+
     public <T extends Aggregate> T find(String aggregateId, Class<T> aClass) {
         JsonDocument doc = this.bucket.get(aggregateId);
         Map<String, Object> content = doc.content().toMap();
